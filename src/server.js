@@ -4,6 +4,8 @@ import app from "./app.js";
 
 import { entorno } from "./config/entorno.js";
 
+import { prisma } from "./config/prisma.js";
+
 import { crearServidorSocket } from "./realtime/socket.js";
 
 const servidorHttp = createServer(app);
@@ -21,13 +23,23 @@ servidorHttp.listen(entorno.puerto, () => {
   console.log("");
 });
 
-function cerrarServidor(senal) {
-  console.log(`\n${senal} recibido. Cerrando servidor...`);
+async function cerrarServidor(senal) {
+  console.log(`\n${senal} recibido. Cerrando SmartTable...`);
 
-  servidorHttp.close(() => {
-    console.log("Servidor cerrado.");
+  servidorHttp.close(async () => {
+    try {
+      await prisma.$disconnect();
 
-    process.exit(0);
+      console.log("Conexión con PostgreSQL cerrada.");
+
+      console.log("Servidor cerrado.");
+
+      process.exit(0);
+    } catch (error) {
+      console.error("Error durante el cierre:", error);
+
+      process.exit(1);
+    }
   });
 }
 

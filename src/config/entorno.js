@@ -2,12 +2,6 @@ import "dotenv/config";
 
 import { z } from "zod";
 
-/*
- * Validamos la configuración al iniciar el backend.
- *
- * Es preferible detectar una variable faltante inmediatamente
- * que descubrir el problema cuando ya llegó una petición.
- */
 const esquemaEntorno = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
 
@@ -16,6 +10,13 @@ const esquemaEntorno = z.object({
   JWT_SECRET: z
     .string()
     .min(32, "JWT_SECRET debe contener al menos 32 caracteres."),
+
+  DATABASE_URL: z
+    .string()
+    .regex(
+      /^postgres(ql)?:\/\//,
+      "DATABASE_URL debe ser una URL válida de PostgreSQL.",
+    ),
 });
 
 const resultado = esquemaEntorno.safeParse(process.env);
@@ -34,4 +35,6 @@ export const entorno = {
   frontendUrl: resultado.data.FRONTEND_URL,
 
   jwtSecret: resultado.data.JWT_SECRET,
+
+  databaseUrl: resultado.data.DATABASE_URL,
 };

@@ -1,21 +1,36 @@
 import { Router } from "express";
 
+import { prisma } from "../config/prisma.js";
+
 const router = Router();
 
 /*
- * Este endpoint permite comprobar rápidamente
- * que el backend se encuentra disponible.
+ * Comprueba tanto que Express está funcionando
+ * como que existe conexión real con PostgreSQL.
  *
  * GET /api/health
  */
-router.get("/", (req, res) => {
-  return res.json({
-    estado: "OK",
+router.get("/", async (req, res) => {
+  try {
+    await prisma.$queryRaw`
+      SELECT 1
+    `;
 
-    servicio: "SmartTable Backend",
+    return res.json({
+      estado: "OK",
+      servicio: "SmartTable Backend",
+      baseDatos: "OK",
+      fechaHora: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error(error);
 
-    fechaHora: new Date().toISOString(),
-  });
+    return res.status(503).json({
+      estado: "ERROR",
+      servicio: "SmartTable Backend",
+      baseDatos: "NO_DISPONIBLE",
+    });
+  }
 });
 
 export default router;
