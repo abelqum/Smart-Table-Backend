@@ -60,12 +60,11 @@ router.delete(
 
   eliminarMesa,
 );
-
 router.post(
   "/:id/asignar",
   autenticar,
 
-  autorizarRoles("ADMIN", "HOSTESS"),
+  autorizarRoles("ADMIN", "HOSTESS", "WAITER"),
 
   validarCuerpo(esquemaAsignarMesa),
 
@@ -85,7 +84,7 @@ router.post(
   "/:id/limpieza/iniciar",
   autenticar,
 
-  autorizarRoles("ADMIN", "HOSTESS", "CLEANING"),
+  autorizarRoles("ADMIN", "HOSTESS", "CLEANING", "WAITER"),
 
   iniciarLimpiezaMesa,
 );
@@ -94,7 +93,7 @@ router.post(
   "/:id/limpieza/finalizar",
   autenticar,
 
-  autorizarRoles("ADMIN", "HOSTESS", "CLEANING"),
+  autorizarRoles("ADMIN", "HOSTESS", "CLEANING", "WAITER"),
 
   finalizarLimpiezaMesa,
 );

@@ -1,4 +1,5 @@
 import express from "express";
+
 import cors from "cors";
 
 import { entorno } from "./config/entorno.js";
@@ -10,12 +11,10 @@ import {
   manejarRutaNoEncontrada,
 } from "./middlewares/errores.js";
 
+import { notificarCambiosRealtime } from "./middlewares/realtime.js";
+
 const app = express();
 
-/*
- * Evitamos exponer innecesariamente
- * que utilizamos Express.
- */
 app.disable("x-powered-by");
 
 /*
@@ -24,7 +23,7 @@ app.disable("x-powered-by");
  * Next.js:
  * http://localhost:3000
  *
- * Express:
+ * Express / Socket.IO:
  * http://localhost:4000
  */
 app.use(
@@ -35,10 +34,6 @@ app.use(
   }),
 );
 
-/*
- * Permite que Express interprete
- * cuerpos JSON enviados por los clientes.
- */
 app.use(
   express.json({
     limit: "1mb",
@@ -46,13 +41,21 @@ app.use(
 );
 
 /*
- * Toda nuestra API estará debajo de /api.
+ * Registramos el listener ANTES de las rutas.
+ *
+ * Cuando la respuesta termine, el middleware
+ * comprobará si fue una mutación exitosa y
+ * notificará al resto de clientes.
+ */
+app.use(notificarCambiosRealtime);
+
+/*
+ * API REST.
  */
 app.use("/api", rutasApi);
 
 /*
- * Estos middlewares deben quedar después
- * de las rutas.
+ * Manejo de errores.
  */
 app.use(manejarRutaNoEncontrada);
 

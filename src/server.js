@@ -12,19 +12,34 @@ const servidorHttp = createServer(app);
 
 export const io = crearServidorSocket(servidorHttp);
 
+/*
+ * Hacemos disponible Socket.IO para los
+ * middlewares y rutas de Express.
+ */
+app.set("io", io);
+
 servidorHttp.listen(entorno.puerto, () => {
   console.log("");
+
   console.log("SmartTable Backend iniciado");
 
   console.log(`API: http://localhost:${entorno.puerto}/api`);
 
   console.log(`Health: http://localhost:${entorno.puerto}/api/health`);
 
+  console.log("Socket.IO: activo");
+
   console.log("");
 });
 
 async function cerrarServidor(senal) {
   console.log(`\n${senal} recibido. Cerrando SmartTable...`);
+
+  /*
+   * Dejamos de aceptar nuevas conexiones
+   * Socket.IO antes de apagar HTTP.
+   */
+  io.close();
 
   servidorHttp.close(async () => {
     try {

@@ -82,6 +82,7 @@ export async function asignarTurnoAMesa(req, res, next) {
     const mesa = await asignarTurnoAMesaServicio(
       req.usuario.restauranteId,
       req.usuario.id,
+      req.usuario.rol,
       mesaId,
       req.body,
     );

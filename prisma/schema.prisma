@@ -11,8 +11,7 @@ datasource db {
   provider = "postgresql"
 }
 
-
-/*
+/**
  * ============================================================
  * ENUMS
  * ============================================================
@@ -47,6 +46,8 @@ enum EstadoTurno {
 
 enum TipoEvento {
   WAITLIST_CREATED
+  WAITLIST_UPDATED
+  WAITLIST_CALLED
   WAITLIST_CANCELLED
   TABLE_ASSIGNED
   TABLE_ASSIGNED_CAPACITY_OVERRIDE
@@ -54,6 +55,7 @@ enum TipoEvento {
   CLEANING_STARTED
   CLEANING_FINISHED
   NFC_SCANNED
+  NFC_TAG_LINKED
 }
 
 enum OrigenEvento {
@@ -68,8 +70,7 @@ enum TipoEtiquetaNfc {
   FEEDBACK
 }
 
-
-/*
+/**
  * ============================================================
  * RESTAURANTE
  * ============================================================
@@ -82,10 +83,25 @@ model Restaurante {
 
   slug String @unique
 
+  /**
+   * Estos campos ya existen en el formulario
+   * de configuración del frontend.
+   */
+  telefono String? @db.VarChar(30)
+
+  direccion String? @db.VarChar(255)
+
+  /**
+   * Se utilizará más adelante para el menú
+   * público mediante NFC.
+   */
   menuUrl String? @map("menu_url")
 
   activo Boolean @default(true)
 
+  /**
+   * Relaciones.
+   */
   usuarios Usuario[]
 
   pisos Piso[]
@@ -107,11 +123,17 @@ model Restaurante {
   @@map("restaurantes")
 }
 
-
-/*
+/**
  * ============================================================
  * USUARIO
  * ============================================================
+ * Cada empleado posee su propia cuenta.
+ * ADMIN
+ * HOSTESS
+ * WAITER
+ * CLEANING
+ * Esto permite saber qué usuario realizó
+ * cada operación.
  */
 
 model Usuario {
@@ -123,9 +145,9 @@ model Usuario {
 
   correo String @unique
 
-  /*
-   * Nunca almacenamos la contraseña en texto plano.
-   * Aquí se almacena el hash generado con bcrypt.
+  /**
+   * Nunca se almacena la contraseña directamente.
+   * Se guarda el hash generado con bcrypt.
    */
   passwordHash String @map("password_hash")
 
@@ -135,8 +157,15 @@ model Usuario {
 
   restaurante Restaurante @relation(fields: [restauranteId], references: [id], onDelete: Cascade)
 
+  /**
+   * Sesiones de mesa que este usuario asignó.
+   */
   sesionesAsignadas SesionMesa[] @relation("SesionAsignadaPor")
 
+  /**
+   * Sesiones de mesa que este usuario cerró
+   * al indicar que los clientes se retiraron.
+   */
   sesionesCerradas SesionMesa[] @relation("SesionCerradaPor")
 
   eventos Evento[]
@@ -146,15 +175,20 @@ model Usuario {
   actualizadoEn DateTime @updatedAt @map("actualizado_en")
 
   @@index([restauranteId])
-
+  @@index([restauranteId, rol])
   @@map("usuarios")
 }
 
-
-/*
+/**
  * ============================================================
- * PISO
+ * PISO / ZONA
  * ============================================================
+ * Un piso también funciona como una zona del restaurante.
+ * Ejemplos:
+ * Planta baja
+ * Terraza
+ * Primer piso
+ * Jardín
  */
 
 model Piso {
@@ -172,19 +206,24 @@ model Piso {
 
   mesas Mesa[]
 
+  /**
+   * Turnos que indicaron preferencia por
+   * este piso o zona.
+   * La preferencia NO obliga a que el cliente
+   * sea sentado ahí.
+   */
+  turnosPreferidos Turno[] @relation("TurnoPisoPreferido")
+
   creadoEn DateTime @default(now()) @map("creado_en")
 
   actualizadoEn DateTime @updatedAt @map("actualizado_en")
 
   @@unique([restauranteId, nombre])
-
   @@index([restauranteId, orden])
-
   @@map("pisos")
 }
 
-
-/*
+/**
  * ============================================================
  * MESA
  * ============================================================
@@ -197,9 +236,13 @@ model Mesa {
 
   pisoId Int @map("piso_id")
 
-  /*
-   * String permite números e identificadores:
-   * 01, 02, A1, T-01, etc.
+  /**
+   * Se mantiene como String porque permite:
+   * 01
+   * 02
+   * A1
+   * T-01
+   * aunque actualmente utilizaremos números.
    */
   numero String
 
@@ -207,8 +250,9 @@ model Mesa {
 
   estado EstadoMesa @default(AVAILABLE)
 
-  /*
-   * Coordenadas usadas en el plano React Konva.
+  /**
+   * Coordenadas utilizadas por React Konva
+   * para dibujar el plano.
    */
   posicionX Int @default(0) @map("posicion_x")
 
@@ -222,6 +266,9 @@ model Mesa {
 
   piso Piso @relation(fields: [pisoId], references: [id], onDelete: Cascade)
 
+  /**
+   * Historial de ocupaciones de la mesa.
+   */
   sesiones SesionMesa[]
 
   eventos Evento[]
@@ -232,24 +279,27 @@ model Mesa {
 
   actualizadoEn DateTime @updatedAt @map("actualizado_en")
 
-  /*
-   * No puede haber dos mesas con el mismo número
-   * dentro de un restaurante.
+  /**
+   * Dos mesas del mismo restaurante
+   * no pueden tener el mismo número.
    */
   @@unique([restauranteId, numero])
-
   @@index([restauranteId, estado])
-
   @@index([pisoId])
-
   @@map("mesas")
 }
 
-
-/*
+/**
  * ============================================================
  * TURNO / LISTA DE ESPERA
  * ============================================================
+ * Ya NO utilizamos códigos A021, A022, etc.
+ * El cliente verá:
+ * Turno #1
+ * Turno #2
+ * Turno #3
+ * El campo id continúa existiendo únicamente
+ * como identificador interno de PostgreSQL.
  */
 
 model Turno {
@@ -257,30 +307,65 @@ model Turno {
 
   restauranteId Int @map("restaurante_id")
 
-  /*
-   * Ejemplo:
-   * A021
+  /**
+   * Número visible para cliente y personal.
    */
-  codigo String
+  numero Int
+
+  /**
+   * Permite reiniciar la numeración cada día:
+   * Hoy:
+   * Turno #1
+   * Turno #2
+   * Mañana:
+   * Turno #1
+   * Turno #2
+   */
+  fechaOperacion DateTime @default(now()) @map("fecha_operacion") @db.Date
 
   nombre String
 
   personas Int
 
+  /**
+   * Preferencia opcional del cliente.
+   * null = Sin preferencia
+   */
+  pisoPreferidoId Int? @map("piso_preferido_id")
+
   estado EstadoTurno @default(WAITING)
 
   fechaHoraLlegada DateTime @default(now()) @map("fecha_hora_llegada")
 
+  /**
+   * La hostess puede llamar un turno.
+   * Llamarlo NO significa que ya esté sentado.
+   * El turno sigue en WAITING.
+   */
+  llamadoEn DateTime? @map("llamado_en")
+
+  /**
+   * Momento en que el mesero confirma
+   * físicamente al cliente en una mesa.
+   */
   sentadoEn DateTime? @map("sentado_en")
 
   canceladoEn DateTime? @map("cancelado_en")
 
+  /**
+   * Se establece cuando los clientes
+   * finalmente se retiran de la mesa.
+   */
   completadoEn DateTime? @map("completado_en")
 
   restaurante Restaurante @relation(fields: [restauranteId], references: [id], onDelete: Cascade)
 
-  /*
-   * Un turno genera como máximo una sesión de mesa.
+  pisoPreferido Piso? @relation("TurnoPisoPreferido", fields: [pisoPreferidoId], references: [id], onDelete: SetNull)
+
+  /**
+   * Un turno puede generar como máximo
+   * una sesión de mesa.
+   * Mientras está WAITING esta relación es null.
    */
   sesionMesa SesionMesa?
 
@@ -290,38 +375,41 @@ model Turno {
 
   actualizadoEn DateTime @updatedAt @map("actualizado_en")
 
-  @@unique([restauranteId, codigo])
-
+  /**
+   * Permite que la numeración vuelva a comenzar
+   * desde 1 cada día.
+   * Ejemplo:
+   * restaurante 1 + 2026-09-30 + turno 1
+   * sólo puede existir una vez.
+   */
+  @@unique([restauranteId, fechaOperacion, numero])
   @@index([restauranteId, estado])
-
+  @@index([restauranteId, fechaOperacion, estado])
+  @@index([pisoPreferidoId])
   @@index([fechaHoraLlegada])
-
+  @@index([llamadoEn])
   @@map("turnos")
 }
 
-
-/*
+/**
  * ============================================================
  * SESIÓN DE MESA
  * ============================================================
- *
- * Representa una ocupación concreta de una mesa.
- *
- * Ejemplo:
- *
- * Mesa 04
- * Capacidad normal = 4
- * Turno = 5 personas
- *
- * Si la hostess autoriza agregar una silla:
- *
- * capacidadOriginal = 4
- * personasTurno = 5
- * excedeCapacidad = true
- * personasExtra = 1
- * asignacionManual = true
- *
- * Mesa.capacidad continúa siendo 4.
+ * Aquí nace realmente la relación:
+ * Turno <-> Mesa
+ * NO asignamos una mesa desde la lista de espera.
+ * Primero:
+ * Turno #7
+ * Carlos
+ * WAITING
+ * Después el cliente llega físicamente a una mesa.
+ * El mesero:
+ * 1. Escanea NFC
+ * o selecciona la mesa desde el mapa.
+ * 2. Pregunta nombre / número de turno.
+ * 3. Selecciona Turno #7.
+ * 4. Confirma.
+ * Sólo entonces se crea SesionMesa.
  */
 
 model SesionMesa {
@@ -331,27 +419,51 @@ model SesionMesa {
 
   mesaId Int @map("mesa_id")
 
+  /**
+   * @unique evita que el mismo turno
+   * sea asignado a dos mesas.
+   */
   turnoId Int @unique @map("turno_id")
 
-  /*
-   * Usuario que hizo la asignación.
+  /**
+   * Usuario que confirmó la asignación.
+   * Normalmente será un WAITER,
+   * HOSTESS o ADMIN.
    */
   asignadoPorId Int @map("asignado_por_id")
 
-  /*
-   * Usuario que posteriormente cerró la sesión.
+  /**
+   * Usuario que indicó que los clientes
+   * se retiraron.
    */
   cerradoPorId Int? @map("cerrado_por_id")
 
+  /**
+   * Guardamos la capacidad que tenía la mesa
+   * en ese momento para conservar el historial.
+   */
   capacidadOriginal Int @map("capacidad_original")
 
   personasTurno Int @map("personas_turno")
 
+  /**
+   * Ejemplo:
+   * Mesa = 4
+   * Personas = 5
+   * excedeCapacidad = true
+   * personasExtra = 1
+   */
   excedeCapacidad Boolean @default(false) @map("excede_capacidad")
 
   personasExtra Int @default(0) @map("personas_extra")
 
-  asignacionManual Boolean @default(false) @map("asignacion_manual")
+  /**
+   * Indica que ADMIN/HOSTESS autorizó
+   * explícitamente una excepción de capacidad.
+   * No se refiere a seleccionar la mesa
+   * manualmente desde Android.
+   */
+  excepcionCapacidadAutorizada Boolean @default(false) @map("excepcion_capacidad_autorizada")
 
   inicio DateTime @default(now())
 
@@ -367,24 +479,31 @@ model SesionMesa {
 
   cerradoPor Usuario? @relation("SesionCerradaPor", fields: [cerradoPorId], references: [id], onDelete: Restrict)
 
+  /**
+   * Nos permite consultar rápidamente
+   * las ocupaciones de cada restaurante.
+   */
   @@index([restauranteId])
-
-  /*
-   * Facilita buscar la sesión activa:
-   *
-   * mesaId = ?
+  /**
+   * Para localizar la sesión activa:
+   * mesaId = X
    * fin = null
    */
   @@index([mesaId, fin])
-
   @@map("sesiones_mesa")
 }
 
-
-/*
+/**
  * ============================================================
  * EVENTOS / HISTORIAL
  * ============================================================
+ * El historial nos permite conocer:
+ * qué pasó
+ * cuándo pasó
+ * en qué mesa
+ * con qué turno
+ * qué usuario lo hizo
+ * desde qué aplicación se hizo
  */
 
 model Evento {
@@ -392,20 +511,18 @@ model Evento {
 
   restauranteId Int @map("restaurante_id")
 
-  /*
-   * Algunos eventos no están vinculados
-   * directamente con una mesa.
+  /**
+   * Nullable porque existen eventos,
+   * como crear o llamar un turno,
+   * que todavía no tienen mesa.
    */
   mesaId Int? @map("mesa_id")
 
-  /*
-   * Algunos eventos no necesitan turno.
-   */
   turnoId Int? @map("turno_id")
 
-  /*
-   * Puede ser null cuando la acción
-   * fue realizada automáticamente.
+  /**
+   * Puede ser null cuando una acción
+   * es generada automáticamente por el sistema.
    */
   usuarioId Int? @map("usuario_id")
 
@@ -413,17 +530,26 @@ model Evento {
 
   descripcion String
 
+  /**
+   * WEB
+   * ANDROID
+   * SYSTEM
+   */
   origen OrigenEvento
 
-  /*
-   * Información adicional opcional.
-   *
-   * Ejemplo:
-   *
+  /**
+   * Datos complementarios.
+   * Ejemplos:
    * {
-   *   "capacidad": 4,
-   *   "personas": 5,
-   *   "personasExtra": 1
+   * "metodo": "NFC"
+   * }
+   * {
+   * "metodo": "MANUAL"
+   * }
+   * {
+   * "capacidad": 4,
+   * "personas": 5,
+   * "personasExtra": 1
    * }
    */
   metadata Json?
@@ -439,30 +565,23 @@ model Evento {
   fechaHora DateTime @default(now()) @map("fecha_hora")
 
   @@index([restauranteId, fechaHora])
-
   @@index([mesaId])
-
   @@index([turnoId])
-
   @@index([usuarioId])
-
   @@map("eventos")
 }
 
-
-/*
+/**
  * ============================================================
  * ETIQUETAS NFC
  * ============================================================
- *
- * Ejemplo de contenido físico en NTAG213:
- *
+ * Para las etiquetas operativas:
+ * NTAG213
+ * Ejemplo de contenido:
  * v=1;t=7fb1d324b16d49c39a8074d410f5345a
- *
- * La etiqueta contiene el token.
- *
- * PostgreSQL NO conserva ese token directamente.
- * Guarda solamente SHA-256(token).
+ * El token real NO se almacena en PostgreSQL.
+ * PostgreSQL conserva:
+ * SHA-256(token)
  */
 
 model EtiquetaNfc {
@@ -470,15 +589,16 @@ model EtiquetaNfc {
 
   restauranteId Int @map("restaurante_id")
 
-  /*
-   * Es nullable porque una etiqueta futura de tipo
-   * MENU o FEEDBACK no necesariamente pertenece
-   * a una mesa concreta.
+  /**
+   * TABLE_OPERATION normalmente tendrá mesa.
+   * MENU o FEEDBACK pueden no estar ligados
+   * directamente con una mesa.
    */
   mesaId Int? @map("mesa_id")
 
-  /*
-   * SHA-256 hexadecimal ocupa 64 caracteres.
+  /**
+   * Un SHA-256 hexadecimal contiene
+   * exactamente 64 caracteres.
    */
   tokenHash String @unique @map("token_hash") @db.VarChar(64)
 
@@ -497,8 +617,6 @@ model EtiquetaNfc {
   actualizadoEn DateTime @updatedAt @map("actualizado_en")
 
   @@index([restauranteId, tipo])
-
   @@index([mesaId])
-
   @@map("etiquetas_nfc")
 }

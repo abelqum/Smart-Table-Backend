@@ -8,7 +8,8 @@ import mesasRoutes from "./mesas.routes.js";
 import pisosRoutes from "./pisos.routes.js";
 import restauranteRoutes from "./restaurante.routes.js";
 import turnosRoutes from "./turnos.routes.js";
-
+import usuariosRoutes from "./usuarios.routes.js";
+import nfcRoutes from "./nfc.routes.js";
 const router = Router();
 
 router.use("/health", healthRoutes);
@@ -27,4 +28,7 @@ router.use("/turnos", turnosRoutes);
 
 router.use("/eventos", eventosRoutes);
 
+router.use("/usuarios", usuariosRoutes);
+
+router.use("/nfc", nfcRoutes);
 export default router;

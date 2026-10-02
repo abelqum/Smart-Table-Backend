@@ -44,9 +44,7 @@ function convertirMesa(mesa) {
       ? {
           id: sesionActiva.turno.id,
 
-          turno: sesionActiva.turno.codigo,
-
-          codigo: sesionActiva.turno.codigo,
+          numero: sesionActiva.turno.numero,
 
           nombre: sesionActiva.turno.nombre,
 
@@ -56,7 +54,8 @@ function convertirMesa(mesa) {
 
           personasExtra: sesionActiva.personasExtra,
 
-          asignacionManual: sesionActiva.asignacionManual,
+          excepcionCapacidadAutorizada:
+            sesionActiva.excepcionCapacidadAutorizada,
         }
       : null,
   };
@@ -84,6 +83,7 @@ export async function obtenerMesas(restauranteId) {
   const mesas = await prisma.mesa.findMany({
     where: {
       restauranteId,
+
       activa: true,
     },
 
@@ -217,6 +217,7 @@ export async function eliminarMesa(restauranteId, mesaId) {
 export async function asignarTurnoAMesa(
   restauranteId,
   usuarioId,
+  rolUsuario,
   mesaId,
   { turnoId, permitirExcesoCapacidad },
 ) {
@@ -237,6 +238,21 @@ export async function asignarTurnoAMesa(
 
     if (mesa.estado !== "AVAILABLE") {
       throw crearErrorHttp("La mesa no se encuentra disponible.", 409);
+    }
+
+    /*
+     * Protección adicional ante intentos simultáneos.
+     */
+    const sesionActiva = await tx.sesionMesa.findFirst({
+      where: {
+        mesaId: mesa.id,
+
+        fin: null,
+      },
+    });
+
+    if (sesionActiva) {
+      throw crearErrorHttp("La mesa ya tiene una sesión activa.", 409);
     }
 
     const turno = await tx.turno.findFirst({
@@ -261,8 +277,20 @@ export async function asignarTurnoAMesa(
 
     if (excedeCapacidad && !permitirExcesoCapacidad) {
       throw crearErrorHttp(
-        `El grupo tiene ${turno.personas} personas y la mesa tiene capacidad para ${mesa.capacidad}. La asignación automática no puede exceder la capacidad.`,
+        `El Turno #${turno.numero} tiene ${turno.personas} personas y la mesa tiene capacidad para ${mesa.capacidad}.`,
         409,
+      );
+    }
+
+    /*
+     * WAITER puede confirmar físicamente una
+     * asignación normal, pero NO autorizar
+     * una excepción de capacidad.
+     */
+    if (excedeCapacidad && !["ADMIN", "HOSTESS"].includes(rolUsuario)) {
+      throw crearErrorHttp(
+        "Sólo un administrador o hostess puede autorizar una excepción de capacidad.",
+        403,
       );
     }
 
@@ -286,7 +314,7 @@ export async function asignarTurnoAMesa(
 
         personasExtra,
 
-        asignacionManual: excedeCapacidad,
+        excepcionCapacidadAutorizada: excedeCapacidad,
       },
     });
 
@@ -329,8 +357,8 @@ export async function asignarTurnoAMesa(
         tipo: tipoEvento,
 
         descripcion: excedeCapacidad
-          ? `Turno ${turno.codigo} asignado manualmente a la mesa ${mesa.numero} excediendo su capacidad por ${personasExtra} persona(s).`
-          : `Turno ${turno.codigo} asignado a la mesa ${mesa.numero}.`,
+          ? `Turno #${turno.numero} confirmado en la mesa ${mesa.numero} con una excepción de ${personasExtra} persona(s).`
+          : `Turno #${turno.numero} confirmado en la mesa ${mesa.numero}.`,
 
         origen: "WEB",
 
@@ -450,7 +478,7 @@ export async function registrarSalidaClientes(
 
         tipo: "CUSTOMERS_LEFT",
 
-        descripcion: `Los clientes se retiraron de la mesa ${mesa.numero}.`,
+        descripcion: `Los clientes del Turno #${sesion.turno.numero} se retiraron de la mesa ${mesa.numero}.`,
 
         origen: "WEB",
       },

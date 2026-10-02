@@ -9,6 +9,28 @@ export const esquemaActualizarRestaurante = z
       .max(100)
       .optional(),
 
+    telefono: z
+      .union([
+        z
+          .string()
+          .trim()
+          .max(30, "El teléfono no puede superar los 30 caracteres."),
+
+        z.null(),
+      ])
+      .optional(),
+
+    direccion: z
+      .union([
+        z
+          .string()
+          .trim()
+          .max(255, "La dirección no puede superar los 255 caracteres."),
+
+        z.null(),
+      ])
+      .optional(),
+
     menuUrl: z
       .union([
         z.string().trim().url("La URL del menú no es válida."),

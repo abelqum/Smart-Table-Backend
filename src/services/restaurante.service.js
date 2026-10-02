@@ -2,6 +2,14 @@ import { prisma } from "../config/prisma.js";
 
 import { crearErrorHttp } from "../utils/errorHttp.js";
 
+function normalizarCampoOpcional(valor) {
+  if (valor === "") {
+    return null;
+  }
+
+  return valor;
+}
+
 export async function obtenerRestaurante(restauranteId) {
   const restaurante = await prisma.restaurante.findUnique({
     where: {
@@ -10,9 +18,17 @@ export async function obtenerRestaurante(restauranteId) {
 
     select: {
       id: true,
+
       nombre: true,
+
       slug: true,
+
+      telefono: true,
+
+      direccion: true,
+
       menuUrl: true,
+
       activo: true,
     },
   });
@@ -29,12 +45,20 @@ export async function actualizarRestaurante(restauranteId, datos) {
     ...datos,
   };
 
-  /*
-   * Una cadena vacía significa que
-   * no se configuró una URL de menú.
-   */
-  if (datosActualizar.menuUrl === "") {
-    datosActualizar.menuUrl = null;
+  if (Object.prototype.hasOwnProperty.call(datosActualizar, "telefono")) {
+    datosActualizar.telefono = normalizarCampoOpcional(
+      datosActualizar.telefono,
+    );
+  }
+
+  if (Object.prototype.hasOwnProperty.call(datosActualizar, "direccion")) {
+    datosActualizar.direccion = normalizarCampoOpcional(
+      datosActualizar.direccion,
+    );
+  }
+
+  if (Object.prototype.hasOwnProperty.call(datosActualizar, "menuUrl")) {
+    datosActualizar.menuUrl = normalizarCampoOpcional(datosActualizar.menuUrl);
   }
 
   return prisma.restaurante.update({
@@ -46,9 +70,17 @@ export async function actualizarRestaurante(restauranteId, datos) {
 
     select: {
       id: true,
+
       nombre: true,
+
       slug: true,
+
+      telefono: true,
+
+      direccion: true,
+
       menuUrl: true,
+
       activo: true,
     },
   });
